@@ -62,10 +62,7 @@ app.get("/reca/signin",(req,res)=>{
        res.render("welcome/signin.ejs",{message:null});
 });
 app.get("/reca/signup",async (req,res)=>{
-  const token=req.cookies?.uid;
- const decoded= jwt.verify(token, 'umamaheshjkhdwehuirh');
- 
- let user=await User.findById(decoded.id);
+  
     res.render("welcome/signup.ejs",{});
 });
 app.post("/reca/signup", async (req,res)=>{
@@ -85,7 +82,8 @@ app.post("/reca/signup", async (req,res)=>{
     });
     newuser.save()
     .then((result)=>{
-      res.redirect("reca/signin");
+      console.log("request on sigin");
+      res.redirect("/reca/signin");
     })
     .catch((err)=>{
       res.send(err);
@@ -215,19 +213,25 @@ app.get("/reca/user", async (req, res) => {
   try {
     const token=req.cookies?.uid;
     const decoded= jwt.verify(token, 'umamaheshjkhdwehuirh');
-     let user=await User.findById(decoded.id).populate([{
-      path:"products",
-      model:"Product",
-     },
-     {
-      path:"orders",
-      model:"Order",
-     }
-    ]);
+    const user = await User.findById(decoded.id).populate([{
+      path: "products",
+      model: "Product",
+    }, {
+      path: "orders",
+      model: "Order",
+      populate: {
+        path: "products",  // populate the products in each order
+        model: "Product"
+      }
+    }]);
      
-    const orderedItems =  user.orders;
-    const soldItems = user.products;
+    if (!user) {
+      return res.status(404).send('User not found');
+    }
 
+    const orderedItems = user.orders.map(order => order.products).flat();
+    const soldItems = user.products;
+   console.log(orderedItems);
     res.render('user/userprofile.ejs', { user, orderedItems, soldItems });
   } catch (error) {
     console.error('Error rendering user orders:', error);
@@ -317,8 +321,8 @@ app.post('/reca/cart/remove',async(req,res)=>{
 })
 //payment 
 const razorpay = new Razorpay({
-  key_id: 'rzp_test_gNWykseo15tPUR',
-  key_secret: 'vr6hdlTS9e7S4DGnnlHWkTNF',
+  key_id: 'rzp_live_1j2EriedZMsgq4',
+  key_secret: 'h1WUmj019fY4ld1UDCDPgWjE',
 });
 //create order
 app.post('/create-order', async (req, res) => {
@@ -326,7 +330,7 @@ app.post('/create-order', async (req, res) => {
   const { amount, currency, receipt } = req.body;
 
   const options = {
-    amount, // amount in the smallest currency unit
+    amount: amount * 100, // amount in the smallest currency unit
     currency,
     receipt,
   };
@@ -339,66 +343,102 @@ app.post('/create-order', async (req, res) => {
     res.status(500).send('Error creating Razorpay order');
   }
 });
+const { ObjectId } = mongoose.Types;
+const jwtSecret = 'umamaheshjkhdwehuirh'; // Replace with your actual secret key
+
 app.post('/verify-payment', async (req, res) => {
-  console.log("verify is recieved");
+  console.log("verify is received");
   const { order_id, payment_id, signature, userId } = req.body;
   console.log(order_id, payment_id, signature, userId);
-  const generatedSignature = crypto.createHmac('sha256', 'vr6hdlTS9e7S4DGnnlHWkTNF')
-    .update(`${order_id}|${payment_id}`)
-    .digest('hex');
 
-  if (generatedSignature === signature) {
-    // Payment verification successful
-    const user = await User.findById(userId).populate('cart');
+  try {
+    const decodedToken = jwt.verify(userId, jwtSecret);
+    const userIdFromToken = decodedToken.id;
+    
+    const generatedSignature = crypto.createHmac('sha256', 'h1WUmj019fY4ld1UDCDPgWjE')
+      .update(`${order_id}|${payment_id}`)
+      .digest('hex');
 
-    const newOrder = new Order({
-      user: user._id,
-      products: user.cart,
-      totalAmount: user.cart.reduce((total, item) => total + item.price * item.quantity, 0),
-      paymentId: payment_id,
-      status: 'completed',
-    });
+    if (generatedSignature === signature) {
+      // Payment verification successful
+      const user = await User.findById(userIdFromToken).populate('cart');
+      console.log(user);
 
-    await newOrder.save();
+      if (!user) {
+        return res.status(404).json({ success: false, message: 'User not found' });
+      }
 
-    user.orders.push(newOrder._id);
-    user.cart = [];
-    await user.save();
+      const newOrder = new Order({
+        user: user._id,
+        products: user.cart,
+        totalAmount: user.cart.reduce((total, item) => total + item.price, 0),
+        paymentId: payment_id,
+        status: 'completed',
+      });
 
-    res.json({ success: true, message: 'Payment verified and order created' });
-  } else {
-    res.status(400).json({ success: false, message: 'Payment verification failed' });
+      await newOrder.save();
+
+      user.orders.push(newOrder._id);
+      
+      const cartProductUpdates = user.cart.map(async (item) => {
+        const product = await Product.findById(item._id);
+        console.log(product);
+
+        if (product) {
+          product.available = false;
+          await product.save();
+        }
+      });
+
+      await Promise.all(cartProductUpdates);
+      
+      user.cart = [];
+      await user.save();
+
+      res.json({ success: true, message: 'Payment verified and order created' });
+    } else {
+      res.status(400).json({ success: false, message: 'Payment verification failed' });
+    }
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, error: err.message });
   }
 });
-//admin
 app.get('/reca/admin',restrictTo(['ADMIN']), async (req, res) => {
   const users = await User.find({});
   const products = await Product.find({});
   const orders = await Order.find({}).populate('user');
-  res.render('user/admin.ejs', { users, products, orders });
+  res.render('admin/admin.ejs', { users, products, orders });
 });
-app.delete('/admin/users/remove/:id', restrictTo(['ADMIN']), async (req, res) => {
-  console.log("admin remove");
+
+app.delete('/admin/products/remove/:id', restrictTo(['ADMIN']), async (req, res) => {
   try {
-      await User.findByIdAndRemove(req.params.id);
-      res.json({ success: true });
+      const productId = req.params.id;
+
+      // // Check if product ID is valid
+      // if (!ObjectId.isValid(productId)) {
+      //     return res.status(400).json({ success: false, message: 'Invalid product ID' });
+      // }
+
+      // Find the product
+      const product = await Product.findById(productId);
+      if (!product) {
+          return res.status(404).json({ success: false, message: 'Product not found' });
+      }
+
+      // Remove the product
+      await  await Product.findByIdAndDelete(productId);
+      res.json({ success: true, message: 'Product successfully deleted' });
   } catch (err) {
-      res.json({ success: false, error: err });
+      console.error("Error deleting product:", err);
+      res.status(500).json({ success: false, error: err.message });
   }
 });
-
-app.delete('/admin/products/remove/:id',restrictTo(['ADMIN']), async (req, res) => {
-  try {
-      console.log("product remove");
-      cosole.log(req.params);
-      await Product.findByIdAndRemove(req.params.id);
-      res.json({ success: true });
-  } catch (err) {
-      res.json({ success: false, error: err });
-  }
+app.delete("/admin/products/remove/:id",  restrictTo(['ADMIN']),async (req,res)=>{
+  let {id}=req.params;
+  await Product.findByIdAndDelete(id);
+  res.redirect("/reca/admin");
 });
-
-
 app.post('/admin/orders/deliver/:id', restrictTo(['ADMIN']), async (req, res) => {
   try {
       await Order.findByIdAndUpdate(req.params.id, { status: 'Delivered' });
@@ -413,8 +453,17 @@ app.get("/listings/:id/edit",async (req,res)=>{
       let {id}=req.params;
       console.log(id);
       const listing= await Product.findById(id);
-      console.log(listing);
+     
       res.render("listings/edit.ejs",{listing});
+});
+//edit for admin
+app.get("/admin/listings/:id/edit",restrictTo(['ADMIN']),async (req,res)=>{
+  console.log("update received");
+  let {id}=req.params;
+  console.log(id);
+  const listing= await Product.findById(id);
+  
+  res.render("admin/edit.ejs",{listing});
 });
 //update route
 app.put("/listings/:id",async (req,res)=>{
@@ -422,6 +471,13 @@ app.put("/listings/:id",async (req,res)=>{
      let listing=req.body.listing;
      await Product.findByIdAndUpdate(id,{...req.body.listing});
      res.redirect(`/listings/${id}`);
+});
+//admin update
+app.put("/admin/listings/:id",async (req,res)=>{
+  let {id}=req.params;
+  let listing=req.body.listing;
+  await Product.findByIdAndUpdate(id,{...req.body.listing});
+  res.redirect(`/reca/admin`);
 });
 app.put("/listings/:id",async (req,res)=>{
   let {id}=req.params;
@@ -435,18 +491,14 @@ app.delete("/listings/:id", async (req,res)=>{
       await Product.findByIdAndDelete(id);
       res.redirect("/reca/products");
 });
-app.delete("/admin/products/remove/:id",  restrictTo(['ADMIN']),async (req,res)=>{
-  let {id}=req.params;
-  await Product.findByIdAndDelete(id);
-  res.redirect("/reca/admin");
-});
+
 // reca products
 app.get("/reca/products/:branch/:category", async (req, res) => {
     
     console.log("API received");
     const { branch, category } = req.params;
     console.log(branch,category);
-    let allListings = await Listing.find({ branch, category });
+    let allListings = await Product.find({ branch, category });
     res.render("listings/index.ejs", { allListings });
 
 
@@ -469,12 +521,12 @@ app.get("/listings/:id",async (req,res)=>{
 app.get('/reca/adminpage',restrictTo(['ADMIN']),(req,res)=>{
   // countUsers().then((count)=>noOfUsers=count)
   // console.log(noOfUsers)
-  res.render('user/admin.ejs');
+  res.render('admin/admin.ejs');
 
 })
 
 
-//create own error
+// create own error
 app.all("*",(req,res,next)=>{
      next(new ExpressError(404,"page not found"));
 });

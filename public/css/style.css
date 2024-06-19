@@ -16,7 +16,7 @@ body{
 .navbar-brand{
     color: rgb(235, 21, 199) !important;
 }
-.fa-cart-shopping{
+.reca-icon{
     color: black !important;
 }
 .nav-link{
@@ -71,7 +71,7 @@ body{
 .card-img-top{
     border-radius: 1rem !important;
     width: 100% !important;
-    height: 10rem !important;
+    height: 13rem !important;
     object-fit: cover !important;
 }
 .card-body{

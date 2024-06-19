@@ -18,13 +18,17 @@ const productSchema = new mongoose.Schema({
   },
   category:String,
   branch:String,
+  available: {
+    type: Boolean,
+    default: true,
+  },
 });
 
 const Product = mongoose.model('Product', productSchema);
 
 module.exports = Product;
 
-{/* <div class="card-body">
+/* <div class="card-body">
     <form action="/Data" method="post">
     <label for="titulo">Titulo:</label>
     <input type="text" name="titulo" id="titulo"class="form-control">
@@ -60,4 +64,4 @@ new Postagens(novaPostagem).save().then(()=>{
 }).catch((err)=>{
     console.log("erro ao salva:"+err)
 })
-}) */}
+}) */
