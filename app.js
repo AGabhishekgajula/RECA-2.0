@@ -1,3 +1,7 @@
+if(process.env.NODE_ENV != "production"){
+  require("dotenv").config();
+  // to restrict the usage on production phase of project
+};
 const express=require('express');
 const app=express();
 const mongoose =require('mongoose');
@@ -16,7 +20,8 @@ const crypto = require('crypto');
 const bcrypt = require('bcrypt');
 const nodemailer = require('nodemailer');
 const multer = require('multer');
-const upload=multer({dest:"uploads/"});
+const {storage}=require("./cloudConfig.js");
+const upload=multer({storage});
 const jwt = require('jsonwebtoken');
 const cookieparser=require('cookie-parser');
 const { decode } = require('punycode');
@@ -55,17 +60,17 @@ async function main(){
     await mongoose.connect(MONGO_URL);
 }
 
-app.get('/reca', (req, res) => {
+app.get('/reca',wrapAsync((req, res) => {
        res.render("welcome/welcome.ejs",{});
-});
-app.get("/reca/signin",(req,res)=>{
+}));
+app.get("/reca/signin",wrapAsync((req,res)=>{
        res.render("welcome/signin.ejs",{message:null});
-});
-app.get("/reca/signup",async (req,res)=>{
+}));
+app.get("/reca/signup",wrapAsync(async (req,res)=>{
   
     res.render("welcome/signup.ejs",{});
-});
-app.post("/reca/signup", async (req,res)=>{
+}));
+app.post("/reca/signup", wrapAsync(async (req,res)=>{
     let {name,email,rollno,phono,password}=req.body;
   const salt = await bcrypt.genSalt(10);
   const newPassword = await bcrypt.hash(password, salt);
@@ -88,8 +93,8 @@ app.post("/reca/signup", async (req,res)=>{
     .catch((err)=>{
       res.send(err);
     });  
-});
-app.post("/reca/signin", async (req, res) => {
+}));
+app.post("/reca/signin",wrapAsync(async (req, res) => {
     console.log("signin");
     const { rollno, password } = req.body;
     console.log(password, rollno);
@@ -111,20 +116,20 @@ app.post("/reca/signin", async (req, res) => {
     } catch (err) {
       res.status(500).send(err.message);
     }
-  });
+  }));
   
-app.get("/reca/home",async(req,res)=> {
+app.get("/reca/home",wrapAsync(async(req,res)=> {
   const token=req.cookies?.uid;
   const decoded= jwt.verify(token, 'umamaheshjkhdwehuirh');
   
   let user=await User.findById(decoded.id);
   console.log(user);
   res.render("user/home.ejs",{user});
-});
-app.get("/reca/forgotpassword",(req,res)=>{
+}));
+app.get("/reca/forgotpassword",wrapAsync((req,res)=>{
      res.render("welcome/forgotpassword.ejs",{});
-});
-app.post('/reca/send-otp', async (req, res) => {
+}));
+app.post('/reca/send-otp',wrapAsync( async (req, res) => {
   const { rollno, phono} = req.body;
   console.log(rollno,phono);
   const user = await User.findOne({ rollno, phono });
@@ -162,10 +167,10 @@ app.post('/reca/send-otp', async (req, res) => {
             
             return resolve({message:'succesful'})
         });
-});
+}));
 
 // Endpoint to reset password
-app.post('/reca/reset-password', async (req, res) => {
+app.post('/reca/reset-password',wrapAsync( async (req, res) => {
   const { otp, newPassword } = req.body;
   const user = await User.findOne({ otp, otpExpiration: { $gt: Date.now() } });
   console.log( otp, newPassword);
@@ -183,18 +188,18 @@ app.post('/reca/reset-password', async (req, res) => {
 
   res.redirect("reca/signin.ejs");
   
-});
+}));
 
 
-app.get("/reca/products",async (req,res)=>{
+app.get("/reca/products",wrapAsync(async (req,res)=>{
      const allListings=await Product.find({});
      res.render("listings/index.ejs",{allListings});
-});
-app.get("/reca/new",(req,res)=>{
+}));
+app.get("/reca/new",wrapAsync((req,res)=>{
     console.log("new page");
     res.render("listings/new.ejs",{});
-});
-app.get("/reca/mycart", async (req, res) => {
+}));
+app.get("/reca/mycart",wrapAsync(async (req, res) => {
   try{
     const token=req.cookies?.uid;
     const decoded= jwt.verify(token, 'umamaheshjkhdwehuirh');
@@ -208,8 +213,8 @@ app.get("/reca/mycart", async (req, res) => {
     console.error('Error rendering cart:', error);
     res.status(500).send('Internal Server Error');
   }
-});
-app.get("/reca/user", async (req, res) => {
+}));
+app.get("/reca/user", wrapAsync(async (req, res) => {
   try {
     const token=req.cookies?.uid;
     const decoded= jwt.verify(token, 'umamaheshjkhdwehuirh');
@@ -237,21 +242,22 @@ app.get("/reca/user", async (req, res) => {
     console.error('Error rendering user orders:', error);
     res.status(500).send('Internal Server Error');
   }
-});
+}));
 // sell route
 app.post('/addproduct',upload.single('image'),  wrapAsync(async (req, res, next) => {
   if (!req.body.listing) {
       throw new ExpressError(400, 'Send valid product details');
   }
   const { title, description, price, branch, category } = req.body.listing;
-    const image = req.file.filename; // Assuming Multer gives a unique filename
+    const image = req.file.path; // Assuming Multer gives a unique filename
+    console.log(image);
   const newProduct = new Product({
     title,
     description,
     price,
     branch,
     category,
-    image: `/uploads/${image}`, // Save path to the image
+    image: image, // Save path to the image
 }); 
  let userproduct=await newProduct.save();
  const token=req.cookies?.uid;
@@ -305,7 +311,7 @@ app.post('/cart/add', WrapAsync(async (req, res,next) => {
 }));
 
 
-app.post('/reca/cart/remove',async(req,res)=>{
+app.post('/reca/cart/remove',wrapAsync(async(req,res)=>{
   const  productId  = req.body.productId;
   const token=req.cookies?.uid;
   const decoded= jwt.verify(token, 'umamaheshjkhdwehuirh');
@@ -318,14 +324,14 @@ app.post('/reca/cart/remove',async(req,res)=>{
   console.log(cartItems);
   res.redirect("/reca/mycart");
 
-})
+}));
 //payment 
 const razorpay = new Razorpay({
   key_id: 'rzp_live_1j2EriedZMsgq4',
   key_secret: 'h1WUmj019fY4ld1UDCDPgWjE',
 });
 //create order
-app.post('/create-order', async (req, res) => {
+app.post('/create-order', wrapAsync(async (req, res) => {
   console.log("order received");
   const { amount, currency, receipt } = req.body;
 
@@ -342,11 +348,11 @@ app.post('/create-order', async (req, res) => {
   } catch (error) {
     res.status(500).send('Error creating Razorpay order');
   }
-});
+}));
 const { ObjectId } = mongoose.Types;
 const jwtSecret = 'umamaheshjkhdwehuirh'; // Replace with your actual secret key
 
-app.post('/verify-payment', async (req, res) => {
+app.post('/verify-payment',  wrapAsync(async (req, res) => {
   console.log("verify is received");
   const { order_id, payment_id, signature, userId } = req.body;
   console.log(order_id, payment_id, signature, userId);
@@ -373,7 +379,7 @@ app.post('/verify-payment', async (req, res) => {
         products: user.cart,
         totalAmount: user.cart.reduce((total, item) => total + item.price, 0),
         paymentId: payment_id,
-        status: 'completed',
+        status: 'pending',
       });
 
       await newOrder.save();
@@ -403,51 +409,60 @@ app.post('/verify-payment', async (req, res) => {
     console.error(err);
     res.status(500).json({ success: false, error: err.message });
   }
-});
-app.get('/reca/admin',restrictTo(['ADMIN']), async (req, res) => {
+}));
+app.get('/reca/admin',restrictTo(['ADMIN']),wrapAsync(async (req, res) => {
   const users = await User.find({});
   const products = await Product.find({});
   const orders = await Order.find({status:"pending"}).populate('user');
   res.render('admin/admin.ejs', { users, products, orders });
-});
+}));
 
-app.delete('/admin/products/remove/:id', restrictTo(['ADMIN']), async (req, res) => {
-  try {
-      const productId = req.params.id;
+// app.delete('/admin/products/remove/:id', restrictTo(['ADMIN']), async (req, res) => {
+//   try {
+//       const productId = req.params.id;
 
-      // // Check if product ID is valid
-      // if (!ObjectId.isValid(productId)) {
-      //     return res.status(400).json({ success: false, message: 'Invalid product ID' });
-      // }
+//       // // Check if product ID is valid
+//       // if (!ObjectId.isValid(productId)) {
+//       //     return res.status(400).json({ success: false, message: 'Invalid product ID' });
+//       // }
 
-      // Find the product
-      const product = await Product.findById(productId);
-      if (!product) {
-          return res.status(404).json({ success: false, message: 'Product not found' });
-      }
+//       // Find the product
+//       const product = await Product.findById(productId);
+//       if (!product) {
+//           return res.status(404).json({ success: false, message: 'Product not found' });
+//       }
 
-      // Remove the product
-      await  await Product.findByIdAndDelete(productId);
-      res.json({ success: true, message: 'Product successfully deleted' });
-  } catch (err) {
-      console.error("Error deleting product:", err);
-      res.status(500).json({ success: false, error: err.message });
-  }
-});
-app.delete("/admin/products/remove/:id",  restrictTo(['ADMIN']),async (req,res)=>{
-  let {id}=req.params;
+//       // Remove the product
+//       await  await Product.findByIdAndDelete(productId);
+//       res.json({ success: true, message: 'Product successfully deleted' });
+//   } catch (err) {
+//       console.error("Error deleting product:", err);
+//       res.status(500).json({ success: false, error: err.message });
+//   }
+// });
+app.delete("/admin/products/remove/:id", restrictTo(['ADMIN']), wrapAsync(async (req, res) => {
+  let { id } = req.params;
+  
+  // Delete the product by ID
   await Product.findByIdAndDelete(id);
+
+  // Find all users who have this product in their products array
+  await User.updateMany(
+    { products: id },  // Find users with the product ID in their products array
+    { $pull: { products: id } }  // Remove the product ID from the array
+  );
+
   res.redirect("/reca/admin");
-});
-app.post('/admin/orders/deliver/:id', restrictTo(['ADMIN']), async (req, res) => {
+}));
+app.post('/admin/orders/deliver/:id', restrictTo(['ADMIN']), wrapAsync(async (req, res) => {
   try {
       await Order.findByIdAndUpdate(req.params.id, { status: 'Delivered' });
       res.json({ success: true });
   } catch (err) {
       res.json({ success: false, error: err });
   }
-});
-app.get('/admin/orders/cancel/:id'), restrictTo(['ADMIN']), async (req, res) => {
+}));
+app.get('/admin/orders/cancel/:id'), restrictTo(['ADMIN']), wrapAsync(async (req, res) => {
   try {
       console.log("do your want cancel the order");
       await Order.findByIdAndUpdate(req.params.id, { status:'failed'});
@@ -455,54 +470,54 @@ app.get('/admin/orders/cancel/:id'), restrictTo(['ADMIN']), async (req, res) => 
   } catch (err) {
       res.json({ success: false, error: err });
   }
-};
+});
 //edit route
-app.get("/listings/:id/edit",async (req,res)=>{
+app.get("/listings/:id/edit",wrapAsync(async (req,res)=>{
       console.log("update received");
       let {id}=req.params;
       console.log(id);
       const listing= await Product.findById(id);
      
       res.render("listings/edit.ejs",{listing});
-});
+}));
 //edit for admin
-app.get("/admin/listings/:id/edit",restrictTo(['ADMIN']),async (req,res)=>{
+app.get("/admin/listings/:id/edit",restrictTo(['ADMIN']),wrapAsync(async (req,res)=>{
   console.log("update received");
   let {id}=req.params;
   console.log(id);
   const listing= await Product.findById(id);
   
   res.render("admin/edit.ejs",{listing});
-});
+}));
 //update route
-app.put("/listings/:id",async (req,res)=>{
+app.put("/listings/:id",wrapAsync(async (req,res)=>{
      let {id}=req.params;
      let listing=req.body.listing;
      await Product.findByIdAndUpdate(id,{...req.body.listing});
      res.redirect(`/listings/${id}`);
-});
+}));
 //admin update
-app.put("/admin/listings/:id",async (req,res)=>{
+app.put("/admin/listings/:id",wrapAsync(async (req,res)=>{
   let {id}=req.params;
   let listing=req.body.listing;
   await Product.findByIdAndUpdate(id,{...req.body.listing});
   res.redirect(`/reca/admin`);
-});
-app.put("/listings/:id",async (req,res)=>{
+}));
+app.put("/listings/:id",wrapAsync(async (req,res)=>{
   let {id}=req.params;
   let listing=req.body.listing;
   await Product.findByIdAndUpdate(id,{...req.body.listing});
   res.redirect(`/listings/${id}`);
-});
+}));
 //delete route
-app.delete("/listings/:id", async (req,res)=>{
+app.delete("/listings/:id", wrapAsync(async (req,res)=>{
       let {id}=req.params;
       await Product.findByIdAndDelete(id);
       res.redirect("/reca/products");
-});
+}));
 
 // reca products
-app.get("/reca/products/:branch/:category", async (req, res) => {
+app.get("/reca/products/:branch/:category", wrapAsync(async (req, res) => {
     
     console.log("API received");
     const { branch, category } = req.params;
@@ -511,37 +526,34 @@ app.get("/reca/products/:branch/:category", async (req, res) => {
     res.render("listings/index.ejs", { allListings });
 
 
-});
-app.get("/reca/products",async(req,res)=>{
+}));
+app.get("/reca/products",wrapAsync(async(req,res)=>{
     let allListings=await Product.find({});
     res.render("listings/index.ejs",{allListings});
-});
+}));
 
 
 
-app.get("/listings/:id",async (req,res)=>{
+app.get("/listings/:id",wrapAsync(async (req,res)=>{
      let {id}=req.params;
      const listing= await Product.findById(id);
 
      res.render("listings/show.ejs",{listing});
-});
+}));
 
 //admin page route
-app.get('/reca/adminpage',restrictTo(['ADMIN']),(req,res)=>{
+app.get('/reca/adminpage',restrictTo(['ADMIN']),wrapAsync((req,res)=>{
   // countUsers().then((count)=>noOfUsers=count)
   // console.log(noOfUsers)
   res.render('admin/admin.ejs');
 
-})
+}));
 
 
-// create own error
-app.all("*",(req,res,next)=>{
-     next(new ExpressError(404,"page not found"));
-});
-app.use((err,req,res)=>{
-   let {statusCode,message}=err;
-   res.status(statusCode).render("error.ejs",{message});
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(err.status || 500);
+  res.render('views/error.ejs', { message: err.message });
 });
 //counting number of users
 async function countUsers() {
