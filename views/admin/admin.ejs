@@ -112,6 +112,7 @@
                             <td><%= order.totalAmount %></td>
                             <td><%= order.status %></td>
                             <td>
+                                <button class="btn btn-danger" onclick="cancelOrder('<%= order._id %>')">Cancel</button> 
                                 <button class="btn btn-success" onclick="markAsDelivered('<%= order._id %>')">Delivered</button>
                             </td>
                         </tr>
@@ -197,6 +198,19 @@
                     }
                 });
         }
+       
+        function cancelOrder(orderId) {
+            fetch(`/admin/orders/cancel/${orderId}`, { method: 'GET' })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        location.reload();
+                    } else {
+                        alert('Error marking order as failed');
+                    }
+                });
+        }
+       
     </script>
 </body>
 </html>

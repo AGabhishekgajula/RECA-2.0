@@ -407,7 +407,7 @@ app.post('/verify-payment', async (req, res) => {
 app.get('/reca/admin',restrictTo(['ADMIN']), async (req, res) => {
   const users = await User.find({});
   const products = await Product.find({});
-  const orders = await Order.find({}).populate('user');
+  const orders = await Order.find({status:"pending"}).populate('user');
   res.render('admin/admin.ejs', { users, products, orders });
 });
 
@@ -447,6 +447,15 @@ app.post('/admin/orders/deliver/:id', restrictTo(['ADMIN']), async (req, res) =>
       res.json({ success: false, error: err });
   }
 });
+app.get('/admin/orders/cancel/:id'), restrictTo(['ADMIN']), async (req, res) => {
+  try {
+      console.log("do your want cancel the order");
+      await Order.findByIdAndUpdate(req.params.id, { status:'failed'});
+      res.json({ success: true });
+  } catch (err) {
+      res.json({ success: false, error: err });
+  }
+};
 //edit route
 app.get("/listings/:id/edit",async (req,res)=>{
       console.log("update received");
