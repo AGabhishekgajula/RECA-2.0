@@ -397,7 +397,20 @@ body{
     box-sizing: border-box;
     text-align: center;
   }
-  
+
+  @media (max-width: 768px) {
+    .item-card { flex: 1 1 calc(50% - 16px); }
+  }
+
+  @media (max-width: 480px) {
+    .item-card { flex: 1 1 100%; }
+  }
+  .user-profile-buttons{
+    display: flex;
+    flex-direction: row;
+
+
+  }
   .item-card h3 {
     margin-bottom: 10px;
     font-size: 1.2em;

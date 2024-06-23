@@ -410,12 +410,26 @@ app.post('/verify-payment',  wrapAsync(async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 }));
-app.get('/reca/admin',restrictTo(['ADMIN']),wrapAsync(async (req, res) => {
+app.get('/reca/admin', restrictTo(['ADMIN']), wrapAsync(async (req, res) => {
   const users = await User.find({});
   const products = await Product.find({});
-  const orders = await Order.find({status:"pending"}).populate('user');
-  res.render('admin/admin.ejs', { users, products, orders });
+  const orders = await Order.find({ status: "pending" })
+    .populate('user')
+    .populate('products');
+
+  // Fetching sellers for each product in the orders
+  const ordersWithSellers = await Promise.all(orders.map(async order => {
+    const productsWithSellers = await Promise.all(order.products.map(async product => {
+      const seller = await User.findOne({ products: product._id });
+      return { product, seller };
+    }));
+    return { ...order.toObject(), products: productsWithSellers };
+  }));
+
+  res.render('admin/admin.ejs', { users, products, orders: ordersWithSellers });
 }));
+
+
 
 // app.delete('/admin/products/remove/:id', restrictTo(['ADMIN']), async (req, res) => {
 //   try {
@@ -462,22 +476,50 @@ app.post('/admin/orders/deliver/:id', restrictTo(['ADMIN']), wrapAsync(async (re
       res.json({ success: false, error: err });
   }
 }));
-app.get('/admin/orders/cancel/:id'), restrictTo(['ADMIN']), wrapAsync(async (req, res) => {
+
+app.get('/admin/orders/cancel/:id', restrictTo(['ADMIN']), wrapAsync(async (req, res) => {
   try {
-      console.log("do your want cancel the order");
-      await Order.findByIdAndUpdate(req.params.id, { status:'failed'});
-      res.json({ success: true });
+    const orderId = req.params.id;
+     console.log(orderId);
+    // Find the order by ID
+    const order = await Order.findById(orderId);
+    console.log(order);
+    if (!order) {
+      return res.json({ success: false, error: 'Order not found' });
+    }
+    // Remove the order ID from the user's orders array
+    const user = await User.findByIdAndUpdate(order.user, {
+      $pull: { orders: orderId }
+    }, { new: true });
+    console.log(user);
+    // Update the availability of each product in the order
+    await Promise.all(order.products.map(async (productId) => {
+      await Product.findByIdAndUpdate(productId, {
+        available: true
+      });
+    }));
+    // Remove the order from the Order schema
+    const deletedOrder = await Order.findByIdAndDelete(orderId);
+    if (!deletedOrder) {
+      console.error(`Failed to delete order: ${orderId}`);
+      return res.json({ success: false, error: 'Failed to delete order' });
+    }
+    
+    // Add an alert to the user
+    user.alerts.push(`Your order with ID ${orderId} has been cancelled.`);
+    await user.save();
+
+    res.json({ success: true });
   } catch (err) {
-      res.json({ success: false, error: err });
+    res.json({ success: false, error: err.message });
   }
-});
+}));
 //edit route
 app.get("/listings/:id/edit",wrapAsync(async (req,res)=>{
       console.log("update received");
       let {id}=req.params;
-      console.log(id);
       const listing= await Product.findById(id);
-     
+      console.log(listing);
       res.render("listings/edit.ejs",{listing});
 }));
 //edit for admin
@@ -511,9 +553,10 @@ app.put("/listings/:id",wrapAsync(async (req,res)=>{
 }));
 //delete route
 app.delete("/listings/:id", wrapAsync(async (req,res)=>{
+     console.log("delete");
       let {id}=req.params;
       await Product.findByIdAndDelete(id);
-      res.redirect("/reca/products");
+      res.redirect("/reca/user");
 }));
 
 // reca products
@@ -553,7 +596,7 @@ app.get('/reca/adminpage',restrictTo(['ADMIN']),wrapAsync((req,res)=>{
 app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(err.status || 500);
-  res.render('views/error.ejs', { message: err.message });
+  res.render('error.ejs', { message: err.message });
 });
 //counting number of users
 async function countUsers() {
